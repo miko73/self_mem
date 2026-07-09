@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block title %}{{ note['title'] or 'Poznámka' }} – Poznámky{% endblock %}
+{% block content %}
+<article class="note-detail">
+  {% if note['title'] %}<h1>{{ note['title'] }}</h1>{% endif %}
+  <div class="note-body">{{ note['body'] }}</div>
+  <p class="note-meta">
+    Vytvořeno {{ note['created_at'] | localdt }}
+    {% if note['updated_at'] != note['created_at'] %}
+      · upraveno {{ note['updated_at'] | localdt }}
+    {% endif %}
+  </p>
+  <div class="actions">
+    <a class="btn btn-primary" href="{{ url_for('edit_note', note_id=note['id']) }}">Upravit</a>
+    <form method="post" action="{{ url_for('delete_note', note_id=note['id']) }}"
+          onsubmit="return confirm('Opravdu smazat tuto poznámku?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="btn btn-danger">Smazat</button>
+    </form>
+    <a class="btn btn-plain" href="{{ url_for('index') }}">← Zpět</a>
+  </div>
+</article>
+{% endblock %}

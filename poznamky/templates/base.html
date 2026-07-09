@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Poznámky{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+<link rel="icon" href="{{ url_for('static', filename='icon-192.png') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='icon-192.png') }}">
+<meta name="theme-color" content="#2563eb">
+</head>
+<body>
+<header>
+  <a href="{{ url_for('index') }}" class="brand">📝 Poznámky</a>
+  {% if session.get('auth') %}
+  <nav>
+    <a href="{{ url_for('new_note') }}" class="btn btn-primary">+ Nová</a>
+    <form method="post" action="{{ url_for('logout') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="btn btn-plain">Odhlásit</button>
+    </form>
+  </nav>
+  {% endif %}
+</header>
+<main>
+  {% with messages = get_flashed_messages() %}
+    {% for msg in messages %}<div class="flash">{{ msg }}</div>{% endfor %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('{{ url_for('static', filename='sw.js') }}');
+}
+</script>
+</body>
+</html>

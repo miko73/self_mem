@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+notes.db
+secret_key.txt
+server_out.log
+server_err.log

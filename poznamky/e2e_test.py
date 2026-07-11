@@ -79,11 +79,25 @@ xss_id = re.search(r'/note/(\d+)$', r.url).group(1)
 r = s.get(BASE + '/')
 check('bez titulku → první řádek v seznamu', '&lt;script&gt;alert(1)&lt;/script&gt;' in r.text)
 
-# 12. smazání
+# 12. smazání (kontroluje zmizení testovacích poznámek, DB nemusí být prázdná)
 for nid in (note_id, xss_id):
     s.post(f'{BASE}/note/{nid}/delete', data={'csrf_token': csrf})
 r = s.get(BASE + '/')
-check('smazání poznámek', 'Zatím žádné poznámky' in r.text)
+check('smazání poznámek',
+      'Upravený titulek' not in r.text and 'alert(1)' not in r.text)
+
+# 12b. rychlý blok – uložení a načtení
+r = s.post(BASE + '/scratchpad', data={'body': 'rozepsaný text ěščř',
+                                       'csrf_token': csrf})
+check('scratchpad: uložení vrací ok', r.status_code == 200 and r.json().get('ok'))
+r = s.get(BASE + '/')
+check('scratchpad: obsah se načte na hlavní stránce', 'rozepsaný text ěščř' in r.text)
+r = s.post(BASE + '/scratchpad', data={'body': 'přepsáno', 'csrf_token': csrf})
+r = s.get(BASE + '/')
+check('scratchpad: přepsání obsahu',
+      'přepsáno' in r.text and 'rozepsaný text' not in r.text)
+r = s.post(BASE + '/scratchpad', data={'body': 'x'})
+check('scratchpad: POST bez CSRF → 400', r.status_code == 400, f'{r.status_code}')
 
 # 13. neexistující poznámka → 404
 r = s.get(BASE + '/note/99999')
@@ -105,4 +119,4 @@ print()
 if failed:
     print(f'SELHALO: {len(failed)} testů: {failed}')
     sys.exit(1)
-print('Všech 19 kontrol prošlo.')
+print('Všech 23 kontrol prošlo.')

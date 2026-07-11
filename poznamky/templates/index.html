@@ -1,19 +1,72 @@
 {% extends 'base.html' %}
 {% block content %}
-{% if notes %}
-<ul class="note-list">
-  {% for note in notes %}
-  <li>
-    <a href="{{ url_for('show_note', note_id=note['id']) }}">
-      <span class="note-title">
-        {{ note['title'] or note['body'].splitlines()[0] | truncate(60) }}
-      </span>
-      <span class="note-date">{{ note['updated_at'] | localdt }}</span>
-    </a>
-  </li>
-  {% endfor %}
-</ul>
-{% else %}
-<p class="empty">Zatím žádné poznámky. Vytvoř první tlačítkem „+ Nová“.</p>
-{% endif %}
+<div class="split">
+  <section class="pane">
+    <div class="pane-head">
+      <h2>Rychlý blok</h2>
+      <span id="save-status" class="save-status"></span>
+    </div>
+    <textarea id="scratchpad" placeholder="Piš… ukládá se samo.">{{ scratch_body }}</textarea>
+  </section>
+
+  <section class="pane">
+    <div class="pane-head"><h2>Poznámky</h2></div>
+    {% if notes %}
+    <ul class="note-list">
+      {% for note in notes %}
+      <li>
+        <a href="{{ url_for('show_note', note_id=note['id']) }}">
+          <span class="note-title">
+            {{ note['title'] or note['body'].splitlines()[0] | truncate(60) }}
+          </span>
+          <span class="note-date">{{ note['updated_at'] | localdt }}</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">Zatím žádné poznámky. Vytvoř první tlačítkem „+ Nová“.</p>
+    {% endif %}
+  </section>
+</div>
+
+<script>
+(function () {
+  const pad = document.getElementById('scratchpad');
+  const status = document.getElementById('save-status');
+  const csrf = '{{ csrf_token }}';
+  let timer = null;
+  let lastSaved = pad.value;
+
+  function save() {
+    if (pad.value === lastSaved) return;
+    const value = pad.value;
+    const data = new FormData();
+    data.append('csrf_token', csrf);
+    data.append('body', value);
+    fetch('{{ url_for('save_scratchpad') }}', { method: 'POST', body: data })
+      .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then((j) => {
+        lastSaved = value;
+        status.textContent = 'Uloženo ' + j.saved;
+        status.classList.remove('save-error');
+      })
+      .catch(() => {
+        status.textContent = 'Neuloženo – zkontroluj připojení';
+        status.classList.add('save-error');
+      });
+  }
+
+  pad.addEventListener('input', () => {
+    status.textContent = 'Píšeš…';
+    clearTimeout(timer);
+    timer = setTimeout(save, 800);
+  });
+  // uložit i při opuštění stránky / přepnutí aplikace na mobilu
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') { clearTimeout(timer); save(); }
+  });
+  pad.addEventListener('blur', () => { clearTimeout(timer); save(); });
+})();
+</script>
 {% endblock %}

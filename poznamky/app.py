@@ -141,10 +141,25 @@ def logout():
 @app.route('/')
 @login_required
 def index():
-    notes = get_db().execute(
+    db = get_db()
+    notes = db.execute(
         'SELECT id, title, body, updated_at FROM notes '
         'ORDER BY updated_at DESC').fetchall()
-    return render_template('index.html', notes=notes)
+    row = db.execute('SELECT body FROM scratchpad WHERE id = 1').fetchone()
+    return render_template('index.html', notes=notes,
+                           scratch_body=row['body'] if row else '')
+
+
+@app.post('/scratchpad')
+@login_required
+def save_scratchpad():
+    db = get_db()
+    db.execute(
+        'INSERT OR REPLACE INTO scratchpad (id, body, updated_at) '
+        'VALUES (1, ?, ?)',
+        (request.form.get('body', ''), now_iso()))
+    db.commit()
+    return {'ok': True, 'saved': localdt(now_iso())}
 
 
 @app.route('/new', methods=['GET', 'POST'])

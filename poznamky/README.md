@@ -17,27 +17,46 @@ Testy (proti běžícímu serveru): `python e2e_test.py`
 
 ## Nasazení na PythonAnywhere (free)
 
-1. Založit účet na https://www.pythonanywhere.com (free, bez karty).
-2. V **Consoles → Bash**:
-   ```bash
-   git clone https://github.com/<uzivatel>/self_mem.git
-   pip3 install --user flask
-   python3 -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('MOJE-HESLO'))"
-   ```
-   Vypsaný hash si zkopírovat.
-3. **Web → Add a new web app → Manual configuration → Python 3.12** (nebo nejvyšší nabízená).
-4. V sekci **Code** nastavit:
-   - Source code: `/home/<uzivatel>/self_mem/poznamky`
-5. Kliknout na **WSGI configuration file** a obsah nahradit:
-   ```python
-   import os, sys
+### Krok 1 – účet
 
-   sys.path.insert(0, '/home/<uzivatel>/self_mem/poznamky')
-   os.environ['NOTES_PASSWORD_HASH'] = 'sem-vlozit-hash-z-kroku-2'
+Založit účet na https://www.pythonanywhere.com (free, bez karty).
 
-   from app import app as application
-   ```
-6. Tlačítko **Reload** → aplikace běží na `https://<uzivatel>.pythonanywhere.com`.
+### Krok 2 – kód a hash hesla
+
+V **Consoles → Bash**:
+
+```bash
+git clone https://github.com/miko73/self_mem.git
+pip3 install --user flask
+python3 -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('MOJE-HESLO'))"
+```
+
+Vypsaný hash si zkopírovat.
+
+### Krok 3 – web app
+
+**Web → Add a new web app → Manual configuration → Python 3.12**
+(nebo nejvyšší nabízená). Poté v sekci **Code** nastavit:
+
+- Source code: `/home/miko73/self_mem/poznamky`
+
+### Krok 4 – WSGI soubor
+
+Kliknout na **WSGI configuration file** a celý obsah nahradit.
+**Pozor: žádný řádek nesmí začínat mezerou** (jinak `IndentationError`):
+
+```python
+import os, sys
+
+sys.path.insert(0, '/home/miko73/self_mem/poznamky')
+os.environ['NOTES_PASSWORD_HASH'] = 'sem-vlozit-hash-z-kroku-2'
+
+from app import app as application
+```
+
+### Krok 5 – spuštění
+
+Tlačítko **Reload** → aplikace běží na https://miko73.pythonanywhere.com.
 
 ### Aktualizace po změně kódu
 

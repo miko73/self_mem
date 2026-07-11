@@ -3,6 +3,7 @@
 {% block content %}
 <form method="post" class="note-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% if note %}<input type="hidden" name="base" value="{{ note['updated_at'] }}">{% endif %}
   <input type="text" name="title" placeholder="Titulek (nepovinný)"
          value="{{ note['title'] if note else '' }}" maxlength="200" autocomplete="off">
   <textarea name="body" placeholder="Text poznámky…" rows="12"

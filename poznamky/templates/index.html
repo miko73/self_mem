@@ -6,6 +6,13 @@
       <h2>Rychlý blok</h2>
       <span id="save-status" class="save-status"></span>
     </div>
+    <div id="conflict-banner" class="conflict-banner" hidden>
+      <p>Rychlý blok byl mezitím změněn z jiného zařízení.</p>
+      <div class="actions">
+        <button type="button" id="btn-take-server" class="btn btn-primary">Načíst verzi ze serveru</button>
+        <button type="button" id="btn-keep-mine" class="btn btn-danger">Přepsat mojí verzí</button>
+      </div>
+    </div>
     <textarea id="scratchpad" placeholder="Piš… ukládá se samo.">{{ scratch_body }}</textarea>
   </section>
 
@@ -34,39 +41,95 @@
 (function () {
   const pad = document.getElementById('scratchpad');
   const status = document.getElementById('save-status');
+  const banner = document.getElementById('conflict-banner');
   const csrf = '{{ csrf_token }}';
+  let base = '{{ scratch_ts }}';        // verze rychlého bloku, kterou máme
+  let version = {{ version }};          // celkové číslo verze dat na serveru
   let timer = null;
   let lastSaved = pad.value;
+  let serverConflict = null;
 
-  function save() {
-    if (pad.value === lastSaved) return;
+  function setStatus(text, err) {
+    status.textContent = text;
+    status.classList.toggle('save-error', !!err);
+  }
+
+  function showConflict(j) {
+    serverConflict = j;
+    banner.hidden = false;
+    setStatus('Konflikt změn', true);
+  }
+
+  function save(force) {
+    if (!force && pad.value === lastSaved) return;
     const value = pad.value;
     const data = new FormData();
     data.append('csrf_token', csrf);
     data.append('body', value);
+    data.append('base', base);
+    if (force) data.append('force', '1');
     fetch('{{ url_for('save_scratchpad') }}', { method: 'POST', body: data })
-      .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then((j) => {
-        lastSaved = value;
-        status.textContent = 'Uloženo ' + j.saved;
-        status.classList.remove('save-error');
+      .then((r) => {
+        if (r.status === 409) { return r.json().then((j) => { showConflict(j); return null; }); }
+        if (!r.ok) throw new Error(r.status);
+        return r.json();
       })
-      .catch(() => {
-        status.textContent = 'Neuloženo – zkontroluj připojení';
-        status.classList.add('save-error');
-      });
+      .then((j) => {
+        if (!j) return;
+        lastSaved = value;
+        base = j.ts;
+        version = j.v;
+        banner.hidden = true;
+        serverConflict = null;
+        setStatus('Uloženo ' + j.saved);
+      })
+      .catch(() => setStatus('Neuloženo – zkontroluj připojení', true));
   }
 
+  document.getElementById('btn-take-server').addEventListener('click', () => {
+    pad.value = serverConflict.server_body;
+    lastSaved = pad.value;
+    base = serverConflict.ts;
+    version = serverConflict.v;
+    banner.hidden = true;
+    serverConflict = null;
+    setStatus('Načtena verze ze serveru');
+  });
+  document.getElementById('btn-keep-mine').addEventListener('click', () => {
+    save(true);
+  });
+
   pad.addEventListener('input', () => {
-    status.textContent = 'Píšeš…';
+    setStatus('Píšeš…');
     clearTimeout(timer);
     timer = setTimeout(save, 800);
   });
   // uložit i při opuštění stránky / přepnutí aplikace na mobilu
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') { clearTimeout(timer); save(); }
+    if (document.visibilityState === 'visible') checkVersion();
   });
   pad.addEventListener('blur', () => { clearTimeout(timer); save(); });
+
+  // sledování změn z jiných zařízení: každých 5 s dotaz na číslo verze;
+  // když se změnilo a nemáme nic rozepsaného, stránka se obnoví
+  function checkVersion() {
+    if (document.visibilityState !== 'visible') return;
+    fetch('{{ url_for('version') }}')
+      .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then((j) => {
+        if (j.v === version) return;
+        if (pad.value === lastSaved && document.activeElement !== pad
+            && serverConflict === null) {
+          location.reload();
+        } else {
+          // rozepsaný text nezahazovat – konflikt se vyřeší při uložení
+          setStatus('Změny z jiného zařízení…');
+        }
+      })
+      .catch(() => {});
+  }
+  setInterval(checkVersion, 5000);
 })();
 </script>
 {% endblock %}

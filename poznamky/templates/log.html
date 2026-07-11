@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block title %}Protokol změn – Poznámky{% endblock %}
+{% block content %}
+<h1 class="page-title">Protokol změn</h1>
+{% if entries %}
+<ul class="log-list">
+  {% for e in entries %}
+  <li>
+    <span class="log-ts">{{ e['ts'] | localdt }}</span>
+    <span class="log-device">{{ e['device'] }}</span>
+    <span class="log-action log-action-{{ e['action'] }}">
+      {%- if e['action'] == 'create' %}vytvořeno
+      {%- elif e['action'] == 'update' %}upraveno
+      {%- elif e['action'] == 'delete' %}smazáno
+      {%- else %}rychlý blok{% endif -%}
+    </span>
+    {% if e['action'] == 'scratch' %}
+      <span class="log-summary muted">průběžné úpravy</span>
+    {% elif e['action'] == 'delete' %}
+      <span class="log-summary">{{ e['summary'] }}</span>
+    {% else %}
+      <a class="log-summary" href="{{ url_for('show_note', note_id=e['note_id']) }}">{{ e['summary'] }}</a>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+<p class="note-meta">Zobrazeno posledních {{ entries | length }} změn.</p>
+{% else %}
+<p class="empty">Zatím žádné zaznamenané změny.</p>
+{% endif %}
+{% endblock %}

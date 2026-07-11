@@ -68,6 +68,40 @@ main {
 .save-status { font-size: 0.8rem; color: var(--muted); }
 .save-status.save-error { color: var(--danger); }
 
+.conflict-banner {
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+.conflict-banner p { margin-bottom: 0.5rem; font-weight: 600; }
+
+/* protokol změn */
+.page-title { font-size: 1.2rem; margin-bottom: 1rem; }
+.log-list { list-style: none; max-width: 700px; }
+.log-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  align-items: baseline;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.5rem 0.9rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.9rem;
+}
+.log-ts { color: var(--muted); white-space: nowrap; }
+.log-device { color: var(--muted); }
+.log-action { font-weight: 600; }
+.log-action-create { color: #15803d; }
+.log-action-update { color: var(--primary); }
+.log-action-delete { color: var(--danger); }
+.log-action-scratch { color: var(--muted); }
+.log-summary { overflow-wrap: anywhere; }
+.muted { color: var(--muted); }
+
 #scratchpad {
   width: 100%;
   min-height: 60vh;

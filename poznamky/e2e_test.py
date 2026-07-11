@@ -13,7 +13,12 @@ s = requests.Session()
 failed = []
 
 
+total = 0
+
+
 def check(name, cond, detail=''):
+    global total
+    total += 1
     print(('OK  ' if cond else 'FAIL') + f' {name}' + (f' – {detail}' if detail and not cond else ''))
     if not cond:
         failed.append(name)
@@ -87,17 +92,67 @@ check('smazání poznámek',
       'Upravený titulek' not in r.text and 'alert(1)' not in r.text)
 
 # 12b. rychlý blok – uložení a načtení
-r = s.post(BASE + '/scratchpad', data={'body': 'rozepsaný text ěščř',
+r = s.post(BASE + '/scratchpad', data={'body': 'scratch-obsah-1 ěščř',
                                        'csrf_token': csrf})
 check('scratchpad: uložení vrací ok', r.status_code == 200 and r.json().get('ok'))
 r = s.get(BASE + '/')
-check('scratchpad: obsah se načte na hlavní stránce', 'rozepsaný text ěščř' in r.text)
-r = s.post(BASE + '/scratchpad', data={'body': 'přepsáno', 'csrf_token': csrf})
+check('scratchpad: obsah se načte na hlavní stránce', 'scratch-obsah-1 ěščř' in r.text)
+r = s.post(BASE + '/scratchpad', data={'body': 'scratch-obsah-2', 'csrf_token': csrf})
 r = s.get(BASE + '/')
 check('scratchpad: přepsání obsahu',
-      'přepsáno' in r.text and 'rozepsaný text' not in r.text)
+      'scratch-obsah-2' in r.text and 'scratch-obsah-1' not in r.text)
 r = s.post(BASE + '/scratchpad', data={'body': 'x'})
 check('scratchpad: POST bez CSRF → 400', r.status_code == 400, f'{r.status_code}')
+
+# 12c. verze stavu a konflikty rychlého bloku
+v0 = s.get(BASE + '/version').json()['v']
+r = s.post(BASE + '/scratchpad', data={'body': 'verze A', 'csrf_token': csrf})
+ts_a = r.json()['ts']
+check('version se změnou zvyšuje', s.get(BASE + '/version').json()['v'] > v0)
+r = s.post(BASE + '/scratchpad',
+           data={'body': 'verze B', 'csrf_token': csrf, 'base': ts_a})
+check('scratchpad: uložení s aktuálním base projde', r.status_code == 200)
+r = s.post(BASE + '/scratchpad',
+           data={'body': 'verze C', 'csrf_token': csrf, 'base': ts_a})
+check('scratchpad: zastaralý base → 409 + obsah serveru',
+      r.status_code == 409 and r.json().get('server_body') == 'verze B',
+      f'{r.status_code}')
+r = s.post(BASE + '/scratchpad', data={'body': 'verze C', 'csrf_token': csrf,
+                                       'base': ts_a, 'force': '1'})
+check('scratchpad: force přepíše i při konfliktu', r.status_code == 200)
+
+# 12d. konflikt při editaci poznámky
+r = s.post(BASE + '/new', data={'title': 'Konfliktní', 'body': 'původní text',
+                                'csrf_token': csrf})
+conflict_id = re.search(r'/note/(\d+)$', r.url).group(1)
+html = s.get(f'{BASE}/note/{conflict_id}/edit').text
+old_base = re.search(r'name="base" value="([^"]*)"', html).group(1)
+# „druhé zařízení“ mezitím poznámku upraví
+s.post(f'{BASE}/note/{conflict_id}/edit',
+       data={'title': 'Konfliktní', 'body': 'změna z druhého zařízení',
+             'csrf_token': csrf, 'base': old_base})
+# „první zařízení“ ukládá se zastaralým base
+r = s.post(f'{BASE}/note/{conflict_id}/edit',
+           data={'title': 'Konfliktní', 'body': 'změna z prvního zařízení',
+                 'csrf_token': csrf, 'base': old_base})
+check('edit: zastaralý base → varování, neuloženo',
+      'mezitím změněna' in r.text
+      and 'změna z druhého zařízení'
+      in s.get(f'{BASE}/note/{conflict_id}').text)
+# opětovné uložení (formulář už nese aktuální base) projde
+new_base = re.search(r'name="base" value="([^"]*)"', r.text).group(1)
+r = s.post(f'{BASE}/note/{conflict_id}/edit',
+           data={'title': 'Konfliktní', 'body': 'změna z prvního zařízení',
+                 'csrf_token': csrf, 'base': new_base})
+check('edit: druhé uložení s novým base projde',
+      'změna z prvního zařízení' in r.text)
+s.post(f'{BASE}/note/{conflict_id}/delete', data={'csrf_token': csrf})
+
+# 12e. protokol změn
+r = s.get(BASE + '/log')
+check('protokol: stránka funguje a obsahuje záznamy',
+      r.status_code == 200 and 'vytvořeno' in r.text and 'smazáno' in r.text
+      and 'Konfliktní' in r.text and 'rychlý blok' in r.text)
 
 # 13. neexistující poznámka → 404
 r = s.get(BASE + '/note/99999')
@@ -119,4 +174,4 @@ print()
 if failed:
     print(f'SELHALO: {len(failed)} testů: {failed}')
     sys.exit(1)
-print('Všech 23 kontrol prošlo.')
+print(f'Všech {total} kontrol prošlo.')

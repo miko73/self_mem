@@ -73,7 +73,68 @@ def init_db():
 
 
 def now_iso():
-    return datetime.now(timezone.utc).isoformat(timespec='seconds')
+    return datetime.now(timezone.utc).isoformat(timespec='microseconds')
+
+
+# --------------------------------------------------- verze stavu + protokol
+
+def device_name():
+    """Hrubá identifikace zařízení z User-Agent pro protokol změn."""
+    ua = request.user_agent.string or ''
+    if 'Android' in ua:
+        system = 'Android'
+    elif 'iPhone' in ua or 'iPad' in ua:
+        system = 'iPhone/iPad'
+    elif 'Windows' in ua:
+        system = 'Windows'
+    elif 'Mac' in ua:
+        system = 'Mac'
+    elif 'Linux' in ua:
+        system = 'Linux'
+    else:
+        system = 'neznámé'
+    if 'Edg' in ua:
+        browser = 'Edge'
+    elif 'Chrome' in ua:
+        browser = 'Chrome'
+    elif 'Firefox' in ua:
+        browser = 'Firefox'
+    elif 'Safari' in ua:
+        browser = 'Safari'
+    else:
+        browser = 'prohlížeč'
+    return f'{system} · {browser}'
+
+
+def get_version(db):
+    row = db.execute("SELECT value FROM meta WHERE key = 'version'").fetchone()
+    return row['value'] if row else 0
+
+
+def log_change(db, action, note_id=None, summary=''):
+    """Zapíše změnu do protokolu a zvýší číslo verze (bez commitu)."""
+    cur = db.execute("UPDATE meta SET value = value + 1 WHERE key = 'version'")
+    if cur.rowcount == 0:
+        db.execute("INSERT INTO meta (key, value) VALUES ('version', 1)")
+
+    ts = now_iso()
+    dev = device_name()
+    if action == 'scratch':
+        # autosave chodí každou chvíli – záznamy od téhož zařízení
+        # mladší 10 minut se slučují do jednoho
+        last = db.execute(
+            'SELECT id, ts, device, action FROM changelog '
+            'ORDER BY id DESC LIMIT 1').fetchone()
+        if last and last['action'] == 'scratch' and last['device'] == dev:
+            age = (datetime.fromisoformat(ts)
+                   - datetime.fromisoformat(last['ts'])).total_seconds()
+            if age < 600:
+                db.execute('UPDATE changelog SET ts = ? WHERE id = ?',
+                           (ts, last['id']))
+                return
+    db.execute(
+        'INSERT INTO changelog (ts, device, action, note_id, summary) '
+        'VALUES (?, ?, ?, ?, ?)', (ts, dev, action, note_id, summary))
 
 
 # ---------------------------------------------------------------- auth + CSRF
@@ -145,21 +206,49 @@ def index():
     notes = db.execute(
         'SELECT id, title, body, updated_at FROM notes '
         'ORDER BY updated_at DESC').fetchall()
-    row = db.execute('SELECT body FROM scratchpad WHERE id = 1').fetchone()
+    row = db.execute(
+        'SELECT body, updated_at FROM scratchpad WHERE id = 1').fetchone()
     return render_template('index.html', notes=notes,
-                           scratch_body=row['body'] if row else '')
+                           scratch_body=row['body'] if row else '',
+                           scratch_ts=row['updated_at'] if row else '',
+                           version=get_version(db))
+
+
+@app.get('/version')
+@login_required
+def version():
+    return {'v': get_version(get_db())}
+
+
+@app.route('/log')
+@login_required
+def changelog():
+    entries = get_db().execute(
+        'SELECT * FROM changelog ORDER BY id DESC LIMIT 100').fetchall()
+    return render_template('log.html', entries=entries)
 
 
 @app.post('/scratchpad')
 @login_required
 def save_scratchpad():
     db = get_db()
+    row = db.execute(
+        'SELECT body, updated_at FROM scratchpad WHERE id = 1').fetchone()
+    base = request.form.get('base')
+    # ochrana proti přepsání změny z jiného zařízení (pokud klient poslal
+    # base a nevyžádal si force)
+    if (row and base is not None and not request.form.get('force')
+            and base != row['updated_at']):
+        return {'ok': False, 'server_body': row['body'],
+                'ts': row['updated_at'], 'saved': localdt(row['updated_at']),
+                'v': get_version(db)}, 409
+    ts = now_iso()
     db.execute(
         'INSERT OR REPLACE INTO scratchpad (id, body, updated_at) '
-        'VALUES (1, ?, ?)',
-        (request.form.get('body', ''), now_iso()))
+        'VALUES (1, ?, ?)', (request.form.get('body', ''), ts))
+    log_change(db, 'scratch')
     db.commit()
-    return {'ok': True, 'saved': localdt(now_iso())}
+    return {'ok': True, 'saved': localdt(ts), 'ts': ts, 'v': get_version(db)}
 
 
 @app.route('/new', methods=['GET', 'POST'])
@@ -170,12 +259,13 @@ def new_note():
         if not body:
             flash('Poznámka nemůže být prázdná.')
         else:
+            title = request.form.get('title', '').strip()
             db = get_db()
             cur = db.execute(
                 'INSERT INTO notes (title, body, created_at, updated_at) '
-                'VALUES (?, ?, ?, ?)',
-                (request.form.get('title', '').strip(), body,
-                 now_iso(), now_iso()))
+                'VALUES (?, ?, ?, ?)', (title, body, now_iso(), now_iso()))
+            log_change(db, 'create', cur.lastrowid,
+                       title or body.splitlines()[0][:60])
             db.commit()
             return redirect(url_for('show_note', note_id=cur.lastrowid))
     return render_template('edit.html', note=None)
@@ -201,15 +291,27 @@ def edit_note(note_id):
     note = get_note_or_404(note_id)
     if request.method == 'POST':
         body = request.form.get('body', '').strip()
+        title = request.form.get('title', '').strip()
         if not body:
             flash('Poznámka nemůže být prázdná.')
+        elif request.form.get('base') != note['updated_at']:
+            # poznámka se mezitím změnila z jiného zařízení – nesahat na ni,
+            # nechat uživateli jeho text a upozornit; opětovné Uložit
+            # už projde (base se přenastaví na aktuální verzi)
+            flash('Pozor: poznámka byla mezitím změněna z jiného zařízení. '
+                  'Tvoje verze NENÍ uložena. Zkontroluj text – opětovné '
+                  '„Uložit“ přepíše verzi ze serveru tímto textem.')
+            draft = {'id': note_id, 'title': title, 'body': body,
+                     'updated_at': note['updated_at']}
+            return render_template('edit.html', note=draft)
         else:
             db = get_db()
+            ts = now_iso()
             db.execute(
                 'UPDATE notes SET title = ?, body = ?, updated_at = ? '
-                'WHERE id = ?',
-                (request.form.get('title', '').strip(), body,
-                 now_iso(), note_id))
+                'WHERE id = ?', (title, body, ts, note_id))
+            log_change(db, 'update', note_id,
+                       title or body.splitlines()[0][:60])
             db.commit()
             return redirect(url_for('show_note', note_id=note_id))
     return render_template('edit.html', note=note)
@@ -218,9 +320,11 @@ def edit_note(note_id):
 @app.post('/note/<int:note_id>/delete')
 @login_required
 def delete_note(note_id):
-    get_note_or_404(note_id)
+    note = get_note_or_404(note_id)
     db = get_db()
     db.execute('DELETE FROM notes WHERE id = ?', (note_id,))
+    log_change(db, 'delete', note_id,
+               note['title'] or note['body'].splitlines()[0][:60])
     db.commit()
     flash('Poznámka smazána.')
     return redirect(url_for('index'))

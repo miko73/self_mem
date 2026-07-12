@@ -13,7 +13,14 @@
         <button type="button" id="btn-keep-mine" class="btn btn-danger">Přepsat mojí verzí</button>
       </div>
     </div>
-    <textarea id="scratchpad" placeholder="Piš… ukládá se samo.">{{ scratch_body }}</textarea>
+    <div class="pad-toolbar" id="pad-toolbar">
+      <button type="button" data-cmd="bold" title="Tučné (Ctrl+B)"><b>B</b></button>
+      <button type="button" data-cmd="outdent" title="Zmenšit odsazení (Shift+Tab)">⇤</button>
+      <button type="button" data-cmd="indent" title="Odsadit (Tab)">⇥</button>
+      <button type="button" id="btn-link" title="Vložit odkaz">🔗</button>
+    </div>
+    <div id="scratchpad" contenteditable="true"
+         data-placeholder="Piš… ukládá se samo.">{{ scratch_html | safe }}</div>
   </section>
 
   <section class="pane">
@@ -46,7 +53,7 @@
   let base = '{{ scratch_ts }}';        // verze rychlého bloku, kterou máme
   let version = {{ version }};          // celkové číslo verze dat na serveru
   let timer = null;
-  let lastSaved = pad.value;
+  let lastSaved = pad.innerHTML;
   let serverConflict = null;
 
   function setStatus(text, err) {
@@ -61,8 +68,8 @@
   }
 
   function save(force) {
-    if (!force && pad.value === lastSaved) return;
-    const value = pad.value;
+    if (!force && pad.innerHTML === lastSaved) return;
+    const value = pad.innerHTML;
     const data = new FormData();
     data.append('csrf_token', csrf);
     data.append('body', value);
@@ -87,8 +94,8 @@
   }
 
   document.getElementById('btn-take-server').addEventListener('click', () => {
-    pad.value = serverConflict.server_body;
-    lastSaved = pad.value;
+    pad.innerHTML = serverConflict.server_body;
+    lastSaved = pad.innerHTML;
     base = serverConflict.ts;
     version = serverConflict.v;
     banner.hidden = true;
@@ -99,10 +106,67 @@
     save(true);
   });
 
-  pad.addEventListener('input', () => {
+  function scheduleSave() {
     setStatus('Píšeš…');
     clearTimeout(timer);
     timer = setTimeout(save, 800);
+  }
+  pad.addEventListener('input', scheduleSave);
+
+  // --- formátování ---
+  const toolbar = document.getElementById('pad-toolbar');
+  // mousedown nesmí sebrat výběr/kurzor z editoru
+  toolbar.addEventListener('mousedown', (e) => e.preventDefault());
+  toolbar.querySelectorAll('button[data-cmd]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      pad.focus();
+      document.execCommand(btn.dataset.cmd);
+      scheduleSave();
+    });
+  });
+  document.getElementById('btn-link').addEventListener('click', () => {
+    pad.focus();
+    let url = prompt('Adresa odkazu:', 'https://');
+    if (!url || url === 'https://') return;
+    if (!/^https?:\/\//.test(url)) url = 'https://' + url;
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed) {
+      document.execCommand('createLink', false, url);
+    } else {
+      const a = document.createElement('a');
+      a.href = url;
+      a.textContent = url;
+      document.execCommand('insertHTML', false, a.outerHTML);
+    }
+    scheduleSave();
+  });
+  // Tab / Shift+Tab = odsazení
+  pad.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      document.execCommand(e.shiftKey ? 'outdent' : 'indent');
+      scheduleSave();
+    }
+  });
+  // vkládání: čistý text; samotná URL se rovnou stane odkazem
+  pad.addEventListener('paste', (e) => {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    const trimmed = text.trim();
+    if (/^https?:\/\/\S+$/.test(trimmed)) {
+      const a = document.createElement('a');
+      a.href = trimmed;
+      a.textContent = trimmed;
+      document.execCommand('insertHTML', false, a.outerHTML);
+    } else {
+      document.execCommand('insertText', false, text);
+    }
+    scheduleSave();
+  });
+  // klik na odkaz ho otevře v novém okně
+  pad.addEventListener('click', (e) => {
+    const a = e.target.closest('a');
+    if (a && a.href) { e.preventDefault(); window.open(a.href, '_blank'); }
   });
   // uložit i při opuštění stránky / přepnutí aplikace na mobilu
   document.addEventListener('visibilitychange', () => {
@@ -119,7 +183,7 @@
       .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then((j) => {
         if (j.v === version) return;
-        if (pad.value === lastSaved && document.activeElement !== pad
+        if (pad.innerHTML === lastSaved && document.activeElement !== pad
             && serverConflict === null) {
           location.reload();
         } else {

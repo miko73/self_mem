@@ -102,6 +102,23 @@ main {
 .log-summary { overflow-wrap: anywhere; }
 .muted { color: var(--muted); }
 
+.pad-toolbar {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+.pad-toolbar button {
+  min-width: 2.4rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  font-size: 1rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+.pad-toolbar button:active { background: #eef2ff; }
+
 #scratchpad {
   width: 100%;
   min-height: 60vh;
@@ -112,8 +129,17 @@ main {
   font-size: 1rem;
   font-family: inherit;
   line-height: 1.5;
-  resize: vertical;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
 }
+#scratchpad:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
+#scratchpad:empty::before { content: attr(data-placeholder); color: var(--muted); }
+#scratchpad blockquote {
+  margin-left: 1.5rem;
+  border: none;
+  padding: 0;
+}
+#scratchpad a { color: var(--primary); text-decoration: underline; cursor: pointer; }
 @media (max-width: 800px) {
   #scratchpad { min-height: 35vh; }
 }

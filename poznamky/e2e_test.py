@@ -104,6 +104,22 @@ check('scratchpad: přepsání obsahu',
 r = s.post(BASE + '/scratchpad', data={'body': 'x'})
 check('scratchpad: POST bez CSRF → 400', r.status_code == 400, f'{r.status_code}')
 
+# 12b2. formátování rychlého bloku – sanitizace HTML
+evil = ('<b>tučné</b><blockquote>odsazené</blockquote>'
+        '<script>alert(99)</script>'
+        '<a href="https://example.com/x">dobrý odkaz</a>'
+        '<a href="javascript:alert(1)" onclick="alert(2)">zlý odkaz</a>'
+        '<img src=x onerror="alert(3)">')
+r = s.post(BASE + '/scratchpad', data={'body': evil, 'csrf_token': csrf})
+t = s.get(BASE + '/').text
+check('formátování: povolené tagy zůstávají',
+      '<b>tučné</b>' in t and '<blockquote>odsazené</blockquote>' in t
+      and '<a href="https://example.com/x">dobrý odkaz</a>' in t)
+check('formátování: nebezpečné věci odstraněny',
+      'alert(99)' not in t and 'javascript:' not in t
+      and 'onclick' not in t and 'onerror' not in t and '<img' not in t
+      and 'zlý odkaz' in t)
+
 # 12c. verze stavu a konflikty rychlého bloku
 v0 = s.get(BASE + '/version').json()['v']
 r = s.post(BASE + '/scratchpad', data={'body': 'verze A', 'csrf_token': csrf})

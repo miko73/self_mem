@@ -3,7 +3,7 @@
 //  - statika (CSS, ikony): cache-first
 //  - HTML stránky: network-first, při výpadku připojení se podá
 //    poslední známá verze z cache (hlavní stránka i navštívené poznámky)
-const CACHE = 'poznamky-v4';
+const CACHE = 'poznamky-v5';
 const STATIC = ['/static/style.css', '/static/icon-192.png', '/static/icon-512.png'];
 
 const OFFLINE_PAGE = `<!doctype html><html lang="cs"><meta charset="utf-8">

@@ -5,10 +5,13 @@ Spuštění lokálně:   python app.py
 Vygenerování hashe: python app.py hash mojeheslo
 """
 import os
+import re
 import secrets
 import sqlite3
 from datetime import datetime, timezone
 from functools import wraps
+from html import escape as html_escape
+from html.parser import HTMLParser
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -74,6 +77,75 @@ def init_db():
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat(timespec='microseconds')
+
+
+# ------------------------------------------------- sanitizace HTML (blok)
+
+class _Sanitizer(HTMLParser):
+    """Whitelist sanitizer pro obsah rychlého bloku (contenteditable)."""
+    ALLOWED = {'b', 'strong', 'i', 'em', 'u', 'a', 'br', 'div', 'p',
+               'ul', 'ol', 'li', 'blockquote'}
+    VOID = {'br'}
+    DROP_CONTENT = {'script', 'style'}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.out = []
+        self.open_tags = []
+        self._drop = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self.DROP_CONTENT:
+            self._drop += 1
+            return
+        if self._drop or tag not in self.ALLOWED:
+            return
+        if tag == 'a':
+            href = next((v for k, v in attrs if k == 'href'), '') or ''
+            if not href.startswith(('http://', 'https://')):
+                return  # odkaz bez bezpečné adresy zahodit, text zůstane
+            self.out.append(f'<a href="{html_escape(href, quote=True)}">')
+            self.open_tags.append('a')
+        elif tag in self.VOID:
+            self.out.append(f'<{tag}>')
+        else:
+            self.out.append(f'<{tag}>')
+            self.open_tags.append(tag)
+
+    def handle_endtag(self, tag):
+        if tag in self.DROP_CONTENT:
+            self._drop = max(0, self._drop - 1)
+            return
+        if not self._drop and tag in self.open_tags:
+            idx = len(self.open_tags) - 1 - self.open_tags[::-1].index(tag)
+            del self.open_tags[idx]
+            self.out.append(f'</{tag}>')
+
+    def handle_data(self, data):
+        if not self._drop:
+            self.out.append(html_escape(data))
+
+
+def sanitize_html(raw):
+    p = _Sanitizer()
+    p.feed(raw)
+    p.close()
+    for tag in reversed(p.open_tags):
+        p.out.append(f'</{tag}>')
+    return ''.join(p.out)
+
+
+_HTML_RE = re.compile(r'<(b|strong|i|em|u|a|br|div|p|ul|ol|li|blockquote)[\s>/]',
+                      re.IGNORECASE)
+
+
+def scratch_to_html(body):
+    """Obsah bloku pro výstup: HTML sanitizovat, starší čistý text převést."""
+    if not body:
+        return ''
+    if _HTML_RE.search(body):
+        return sanitize_html(body)
+    return html_escape(body).replace('\n', '<br>')
 
 
 # --------------------------------------------------- verze stavu + protokol
@@ -209,7 +281,7 @@ def index():
     row = db.execute(
         'SELECT body, updated_at FROM scratchpad WHERE id = 1').fetchone()
     return render_template('index.html', notes=notes,
-                           scratch_body=row['body'] if row else '',
+                           scratch_html=scratch_to_html(row['body'] if row else ''),
                            scratch_ts=row['updated_at'] if row else '',
                            version=get_version(db))
 
@@ -239,13 +311,13 @@ def save_scratchpad():
     # base a nevyžádal si force)
     if (row and base is not None and not request.form.get('force')
             and base != row['updated_at']):
-        return {'ok': False, 'server_body': row['body'],
+        return {'ok': False, 'server_body': scratch_to_html(row['body']),
                 'ts': row['updated_at'], 'saved': localdt(row['updated_at']),
                 'v': get_version(db)}, 409
     ts = now_iso()
     db.execute(
         'INSERT OR REPLACE INTO scratchpad (id, body, updated_at) '
-        'VALUES (1, ?, ?)', (request.form.get('body', ''), ts))
+        'VALUES (1, ?, ?)', (sanitize_html(request.form.get('body', '')), ts))
     log_change(db, 'scratch')
     db.commit()
     return {'ok': True, 'saved': localdt(ts), 'ts': ts, 'v': get_version(db)}

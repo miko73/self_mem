@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block title %}Upravit {{ f['name'] }} – AI poznámky{% endblock %}
+{% block content %}
+<form method="post" class="note-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="base" value="{{ f['modifiedTime'] }}">
+  <h1 class="page-title">{{ f['name'] }}</h1>
+  {% if f['mimeType'] == 'application/vnd.google-apps.document' %}
+  <p class="muted" style="margin-bottom: 0.5rem">
+    Upravuje se jako markdown – po uložení se převede zpět na Google dokument.
+  </p>
+  {% endif %}
+  <textarea name="content" rows="20" class="md-textarea"
+            autofocus>{{ content }}</textarea>
+  <div class="actions">
+    <button type="submit" class="btn btn-primary">Uložit</button>
+    <a class="btn btn-plain" href="{{ url_for('ai_view', file_id=f['id']) }}">Zrušit</a>
+  </div>
+</form>
+{% endblock %}

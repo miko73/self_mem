@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block title %}AI poznámky – Poznámky{% endblock %}
+{% block content %}
+<h1 class="page-title">🤖 AI poznámky (Google Drive)</h1>
+
+{% if not configured %}
+<div class="flash">
+  Google Drive zatím není propojen. Na počítači spusť
+  <code>python google_auth_setup.py</code> ve složce aplikace a výsledný
+  <code>google_auth.json</code> nahraj na server vedle <code>app.py</code>
+  – postup viz README.
+</div>
+{% elif error %}
+<div class="flash">{{ error }}</div>
+{% elif files %}
+<ul class="note-list">
+  {% for f in files %}
+  <li>
+    <a href="{{ url_for('ai_view', file_id=f['id']) }}">
+      <span class="note-title">
+        {% if f['mimeType'] == 'application/vnd.google-apps.document' %}📄{% else %}📎{% endif %}
+        {{ f['name'] }}
+      </span>
+      <span class="note-date">{{ f['modifiedTime'] | localdt }}</span>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="empty">Složka na Google Drive je prázdná.</p>
+{% endif %}
+{% endblock %}

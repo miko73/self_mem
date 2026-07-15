@@ -119,7 +119,7 @@ main {
 }
 .pad-toolbar button:active { background: #eef2ff; }
 
-#scratchpad {
+#scratchpad, .rich-editor {
   width: 100%;
   min-height: 60vh;
   padding: 0.8rem 1rem;
@@ -132,14 +132,25 @@ main {
   overflow-y: auto;
   overflow-wrap: anywhere;
 }
-#scratchpad:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
-#scratchpad:empty::before { content: attr(data-placeholder); color: var(--muted); }
-#scratchpad blockquote {
+#scratchpad:focus, .rich-editor:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+#scratchpad:empty::before, .rich-editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+}
+#scratchpad blockquote, .rich-editor blockquote, .note-body blockquote {
   margin-left: 1.5rem;
   border: none;
   padding: 0;
 }
-#scratchpad a { color: var(--primary); text-decoration: underline; cursor: pointer; }
+#scratchpad a, .rich-editor a, .note-body a {
+  color: var(--primary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.note-form .rich-editor { min-height: 40vh; margin-bottom: 0.75rem; }
 @media (max-width: 800px) {
   #scratchpad { min-height: 35vh; }
 }
@@ -191,10 +202,13 @@ main {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 1rem;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .note-meta { font-size: 0.8rem; color: var(--muted); margin: 0.75rem 0; }
+
+/* AI poznámky (Google Drive) – markdown jako text */
+.md-body { white-space: pre-wrap; }
+.md-textarea { font-family: ui-monospace, Consolas, monospace; font-size: 0.9rem; }
 
 .actions { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.75rem; }
 

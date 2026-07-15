@@ -2,5 +2,6 @@ __pycache__/
 *.pyc
 notes.db
 secret_key.txt
+google_auth.json
 server_out.log
 server_err.log

@@ -1,17 +1,40 @@
 {% extends 'base.html' %}
 {% block title %}{{ 'Upravit' if note else 'Nová' }} poznámka – Poznámky{% endblock %}
 {% block content %}
-<form method="post" class="note-form">
+<form method="post" class="note-form" id="note-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="body" id="body-input">
   {% if note %}<input type="hidden" name="base" value="{{ note['updated_at'] }}">{% endif %}
   <input type="text" name="title" placeholder="Titulek (nepovinný)"
          value="{{ note['title'] if note else '' }}" maxlength="200" autocomplete="off">
-  <textarea name="body" placeholder="Text poznámky…" rows="12"
-            required autofocus>{{ note['body'] if note else '' }}</textarea>
+  <div class="pad-toolbar" id="note-toolbar">
+    <button type="button" data-cmd="bold" title="Tučné (Ctrl+B)"><b>B</b></button>
+    <button type="button" data-cmd="outdent" title="Zmenšit odsazení (Shift+Tab)">⇤</button>
+    <button type="button" data-cmd="indent" title="Odsadit (Tab)">⇥</button>
+    <button type="button" data-link title="Vložit odkaz">🔗</button>
+  </div>
+  <div id="note-editor" class="rich-editor" contenteditable="true"
+       data-placeholder="Text poznámky…">{{ (note['body'] | as_html | safe) if note else '' }}</div>
   <div class="actions">
     <button type="submit" class="btn btn-primary">Uložit</button>
     <a class="btn btn-plain"
        href="{{ url_for('show_note', note_id=note['id']) if note else url_for('index') }}">Zrušit</a>
   </div>
 </form>
+<script src="{{ url_for('static', filename='editor.js') }}"></script>
+<script>
+(function () {
+  const pad = document.getElementById('note-editor');
+  initFormatting(pad, document.getElementById('note-toolbar'), () => {});
+  pad.focus();
+  document.getElementById('note-form').addEventListener('submit', (e) => {
+    if (!pad.textContent.trim()) {
+      e.preventDefault();
+      alert('Poznámka nemůže být prázdná.');
+      return;
+    }
+    document.getElementById('body-input').value = pad.innerHTML;
+  });
+})();
+</script>
 {% endblock %}

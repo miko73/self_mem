@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block title %}{{ f['name'] }} – AI poznámky{% endblock %}
+{% block content %}
+<article class="note-detail">
+  <h1>{{ f['name'] }}</h1>
+  {% if editable %}
+  <div class="note-body md-body">{{ content }}</div>
+  {% else %}
+  <p class="empty">Tento typ souboru ({{ f['mimeType'] }}) se zobrazuje
+    přímo v Google Drive.</p>
+  {% endif %}
+  <p class="note-meta">Naposledy změněno {{ f['modifiedTime'] | localdt }}</p>
+  <div class="actions">
+    {% if editable %}
+    <a class="btn btn-primary" href="{{ url_for('ai_edit', file_id=f['id']) }}">Upravit</a>
+    {% endif %}
+    {% if f['webViewLink'] %}
+    <a class="btn btn-plain" href="{{ f['webViewLink'] }}" target="_blank"
+       rel="noopener">Otevřít v Drive ↗</a>
+    {% endif %}
+    <a class="btn btn-plain" href="{{ url_for('ai_list') }}">← Zpět</a>
+  </div>
+</article>
+{% endblock %}

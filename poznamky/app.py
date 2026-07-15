@@ -10,7 +10,7 @@ import secrets
 import sqlite3
 from datetime import datetime, timezone
 from functools import wraps
-from html import escape as html_escape
+from html import escape as html_escape, unescape as html_unescape
 from html.parser import HTMLParser
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -18,6 +18,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from flask import (Flask, abort, flash, g, redirect, render_template,
                    request, session, url_for)
 from werkzeug.security import check_password_hash, generate_password_hash
+
+import gdrive
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get('NOTES_DB', BASE_DIR / 'notes.db'))
@@ -148,6 +150,27 @@ def scratch_to_html(body):
     return html_escape(body).replace('\n', '<br>')
 
 
+_BLOCK_END_RE = re.compile(r'(?i)</(?:div|p|li|blockquote)>|<br\s*/?>')
+_TAG_RE = re.compile(r'<[^>]+>')
+
+
+def html_to_text(body):
+    """HTML z editoru → čistý text (náhledy, kontrola prázdnosti)."""
+    if not body:
+        return ''
+    if not _HTML_RE.search(body):
+        return body.strip()
+    text = _BLOCK_END_RE.sub('\n', body)
+    text = _TAG_RE.sub('', text)
+    return html_unescape(text).strip()
+
+
+def first_line(body, limit=60):
+    """První řádek textového obsahu pro protokol změn."""
+    text = html_to_text(body)
+    return text.splitlines()[0][:limit] if text else ''
+
+
 # --------------------------------------------------- verze stavu + protokol
 
 def device_name():
@@ -233,6 +256,18 @@ def inject_csrf():
     if 'csrf_token' not in session:
         session['csrf_token'] = secrets.token_hex(16)
     return {'csrf_token': session['csrf_token']}
+
+
+@app.template_filter('as_html')
+def as_html(body):
+    """Tělo poznámky/bloku → bezpečné HTML (starší čistý text se převede)."""
+    return scratch_to_html(body)
+
+
+@app.template_filter('preview')
+def preview(body):
+    """První řádek čistého textu pro seznamy."""
+    return first_line(body, limit=200)
 
 
 @app.template_filter('localdt')
@@ -327,8 +362,8 @@ def save_scratchpad():
 @login_required
 def new_note():
     if request.method == 'POST':
-        body = request.form.get('body', '').strip()
-        if not body:
+        body = sanitize_html(request.form.get('body', '')).strip()
+        if not html_to_text(body):
             flash('Poznámka nemůže být prázdná.')
         else:
             title = request.form.get('title', '').strip()
@@ -336,8 +371,7 @@ def new_note():
             cur = db.execute(
                 'INSERT INTO notes (title, body, created_at, updated_at) '
                 'VALUES (?, ?, ?, ?)', (title, body, now_iso(), now_iso()))
-            log_change(db, 'create', cur.lastrowid,
-                       title or body.splitlines()[0][:60])
+            log_change(db, 'create', cur.lastrowid, title or first_line(body))
             db.commit()
             return redirect(url_for('show_note', note_id=cur.lastrowid))
     return render_template('edit.html', note=None)
@@ -362,9 +396,9 @@ def show_note(note_id):
 def edit_note(note_id):
     note = get_note_or_404(note_id)
     if request.method == 'POST':
-        body = request.form.get('body', '').strip()
+        body = sanitize_html(request.form.get('body', '')).strip()
         title = request.form.get('title', '').strip()
-        if not body:
+        if not html_to_text(body):
             flash('Poznámka nemůže být prázdná.')
         elif request.form.get('base') != note['updated_at']:
             # poznámka se mezitím změnila z jiného zařízení – nesahat na ni,
@@ -382,8 +416,7 @@ def edit_note(note_id):
             db.execute(
                 'UPDATE notes SET title = ?, body = ?, updated_at = ? '
                 'WHERE id = ?', (title, body, ts, note_id))
-            log_change(db, 'update', note_id,
-                       title or body.splitlines()[0][:60])
+            log_change(db, 'update', note_id, title or first_line(body))
             db.commit()
             return redirect(url_for('show_note', note_id=note_id))
     return render_template('edit.html', note=note)
@@ -396,10 +429,75 @@ def delete_note(note_id):
     db = get_db()
     db.execute('DELETE FROM notes WHERE id = ?', (note_id,))
     log_change(db, 'delete', note_id,
-               note['title'] or note['body'].splitlines()[0][:60])
+               note['title'] or first_line(note['body']))
     db.commit()
     flash('Poznámka smazána.')
     return redirect(url_for('index'))
+
+
+# ------------------------------------------- AI poznámky (Google Drive)
+
+_FILE_ID_RE = re.compile(r'^[A-Za-z0-9_-]{10,}$')
+
+
+def check_file_id(file_id):
+    if not _FILE_ID_RE.match(file_id):
+        abort(404)
+
+
+@app.route('/ai')
+@login_required
+def ai_list():
+    files, error = None, None
+    if gdrive.is_configured():
+        try:
+            files = gdrive.list_files()
+        except gdrive.DriveError as e:
+            error = str(e)
+    return render_template('ai_list.html', files=files, error=error,
+                           configured=gdrive.is_configured())
+
+
+@app.route('/ai/<file_id>')
+@login_required
+def ai_view(file_id):
+    check_file_id(file_id)
+    try:
+        meta = gdrive.get_meta(file_id)
+        editable = gdrive.is_editable(meta.get('mimeType'))
+        content = gdrive.read_text(file_id, meta['mimeType']) if editable else None
+    except gdrive.DriveError as e:
+        flash(str(e))
+        return redirect(url_for('ai_list'))
+    return render_template('ai_view.html', f=meta, content=content,
+                           editable=editable)
+
+
+@app.route('/ai/<file_id>/edit', methods=['GET', 'POST'])
+@login_required
+def ai_edit(file_id):
+    check_file_id(file_id)
+    try:
+        meta = gdrive.get_meta(file_id)
+        if not gdrive.is_editable(meta.get('mimeType')):
+            flash('Tento typ souboru neumím upravit – otevři ho v Google Drive.')
+            return redirect(url_for('ai_view', file_id=file_id))
+        if request.method == 'POST':
+            content = request.form.get('content', '')
+            if request.form.get('base') != meta.get('modifiedTime'):
+                # soubor se mezitím změnil (jiné zařízení / AI relace) –
+                # neukládat, nechat uživateli text; další Uložit už projde
+                flash('Pozor: soubor byl mezitím změněn. Tvoje verze NENÍ '
+                      'uložena. Zkontroluj text – opětovné „Uložit“ přepíše '
+                      'verzi na Drive tímto textem.')
+                return render_template('ai_edit.html', f=meta, content=content)
+            gdrive.write_text(file_id, meta['mimeType'], content)
+            return redirect(url_for('ai_view', file_id=file_id))
+        content = gdrive.read_text(file_id, meta['mimeType'])
+    except gdrive.DriveError as e:
+        flash(str(e))
+        return redirect(url_for('ai_list'))
+    return render_template('ai_edit.html', f=meta, content=content)
 
 
 # ---------------------------------------------------------------- start

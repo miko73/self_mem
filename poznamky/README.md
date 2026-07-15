@@ -15,6 +15,37 @@ se použije dočasné heslo `dev` (vypíše se do konzole).
 
 Testy (proti běžícímu serveru): `python e2e_test.py`
 
+## Záložka 🤖 AI (poznámky z Google Drive)
+
+Záložka zobrazuje a edituje soubory ve složce na Google Drive
+(poznámky ukládané z AI relací). Google dokumenty se čtou a ukládají
+jako markdown (převod dělá Google).
+
+### Jednorázové propojení
+
+1. Na https://console.cloud.google.com vytvořit projekt a povolit
+   **Google Drive API** (APIs & Services → Library).
+2. **OAuth consent screen**: typ External, vyplnit název, uložit
+   a poté **Publish app** (jinak refresh token vyprší po 7 dnech).
+3. **Credentials → Create Credentials → OAuth client ID**, typ
+   **Desktop app**. Zkopírovat Client ID a Client secret.
+4. Lokálně spustit:
+
+```powershell
+python google_auth_setup.py
+```
+
+Skript otevře prohlížeč a po povolení uloží `google_auth.json` vedle
+`app.py`. Soubor je v `.gitignore` – **do gitu nepatří**.
+
+5. Na PythonAnywhere nahrát `google_auth.json` do
+   `/home/miko73/self_mem/poznamky` (Files tab) a kliknout **Reload**.
+
+Jinou složku lze nastavit env proměnnou `GDRIVE_FOLDER_ID`
+(výchozí je složka „AI poznámky“). Místo souboru jdou použít i env
+proměnné `GDRIVE_CLIENT_ID`, `GDRIVE_CLIENT_SECRET`,
+`GDRIVE_REFRESH_TOKEN` (ve WSGI souboru).
+
 ## Nasazení na PythonAnywhere (free)
 
 ### Krok 1 – účet

@@ -17,7 +17,7 @@
       <button type="button" data-cmd="bold" title="Tučné (Ctrl+B)"><b>B</b></button>
       <button type="button" data-cmd="outdent" title="Zmenšit odsazení (Shift+Tab)">⇤</button>
       <button type="button" data-cmd="indent" title="Odsadit (Tab)">⇥</button>
-      <button type="button" id="btn-link" title="Vložit odkaz">🔗</button>
+      <button type="button" data-link title="Vložit odkaz">🔗</button>
     </div>
     <div id="scratchpad" contenteditable="true"
          data-placeholder="Piš… ukládá se samo.">{{ scratch_html | safe }}</div>
@@ -31,7 +31,7 @@
       <li>
         <a href="{{ url_for('show_note', note_id=note['id']) }}">
           <span class="note-title">
-            {{ note['title'] or note['body'].splitlines()[0] | truncate(60) }}
+            {{ note['title'] or note['body'] | preview | truncate(60) }}
           </span>
           <span class="note-date">{{ note['updated_at'] | localdt }}</span>
         </a>
@@ -44,6 +44,7 @@
   </section>
 </div>
 
+<script src="{{ url_for('static', filename='editor.js') }}"></script>
 <script>
 (function () {
   const pad = document.getElementById('scratchpad');
@@ -113,61 +114,8 @@
   }
   pad.addEventListener('input', scheduleSave);
 
-  // --- formátování ---
-  const toolbar = document.getElementById('pad-toolbar');
-  // mousedown nesmí sebrat výběr/kurzor z editoru
-  toolbar.addEventListener('mousedown', (e) => e.preventDefault());
-  toolbar.querySelectorAll('button[data-cmd]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      pad.focus();
-      document.execCommand(btn.dataset.cmd);
-      scheduleSave();
-    });
-  });
-  document.getElementById('btn-link').addEventListener('click', () => {
-    pad.focus();
-    let url = prompt('Adresa odkazu:', 'https://');
-    if (!url || url === 'https://') return;
-    if (!/^https?:\/\//.test(url)) url = 'https://' + url;
-    const sel = window.getSelection();
-    if (sel && !sel.isCollapsed) {
-      document.execCommand('createLink', false, url);
-    } else {
-      const a = document.createElement('a');
-      a.href = url;
-      a.textContent = url;
-      document.execCommand('insertHTML', false, a.outerHTML);
-    }
-    scheduleSave();
-  });
-  // Tab / Shift+Tab = odsazení
-  pad.addEventListener('keydown', (e) => {
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      document.execCommand(e.shiftKey ? 'outdent' : 'indent');
-      scheduleSave();
-    }
-  });
-  // vkládání: čistý text; samotná URL se rovnou stane odkazem
-  pad.addEventListener('paste', (e) => {
-    e.preventDefault();
-    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
-    const trimmed = text.trim();
-    if (/^https?:\/\/\S+$/.test(trimmed)) {
-      const a = document.createElement('a');
-      a.href = trimmed;
-      a.textContent = trimmed;
-      document.execCommand('insertHTML', false, a.outerHTML);
-    } else {
-      document.execCommand('insertText', false, text);
-    }
-    scheduleSave();
-  });
-  // klik na odkaz ho otevře v novém okně
-  pad.addEventListener('click', (e) => {
-    const a = e.target.closest('a');
-    if (a && a.href) { e.preventDefault(); window.open(a.href, '_blank'); }
-  });
+  // --- formátování (sdílené v static/editor.js) ---
+  initFormatting(pad, document.getElementById('pad-toolbar'), scheduleSave);
   // uložit i při opuštění stránky / přepnutí aplikace na mobilu
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') { clearTimeout(timer); save(); }

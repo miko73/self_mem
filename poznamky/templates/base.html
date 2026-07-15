@@ -16,6 +16,7 @@
   {% if session.get('auth') %}
   <nav>
     <a href="{{ url_for('new_note') }}" class="btn btn-primary">+ Nová</a>
+    <a href="{{ url_for('ai_list') }}" class="btn btn-plain">🤖 AI</a>
     <a href="{{ url_for('changelog') }}" class="btn btn-plain">Protokol</a>
     <form method="post" action="{{ url_for('logout') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

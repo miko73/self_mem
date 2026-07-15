@@ -73,23 +73,32 @@ r = s.post(f'{BASE}/note/{note_id}/edit', data={
     'title': 'Upravený titulek', 'body': 'Nový obsah', 'csrf_token': csrf})
 check('úprava poznámky', 'Upravený titulek' in r.text and 'Nový obsah' in r.text)
 
-# 10. XSS – obsah se escapuje
+# 10. formátování poznámky – sanitizace HTML při uložení
+evil_note = ('<b>tučný text</b><div>druhý řádek</div>'
+             '<script>alert(1)</script>'
+             '<a href="https://example.com/x">dobrý odkaz</a>'
+             '<a href="javascript:alert(2)" onclick="alert(3)">zlý odkaz</a>')
 r = s.post(BASE + '/new', data={
-    'title': '', 'body': '<script>alert(1)</script>', 'csrf_token': csrf})
-check('XSS escapováno', '<script>alert(1)</script>' not in r.text
-      and '&lt;script&gt;' in r.text)
+    'title': '', 'body': evil_note, 'csrf_token': csrf})
+check('poznámka: povolené tagy zůstávají',
+      '<b>tučný text</b>' in r.text
+      and '<a href="https://example.com/x">dobrý odkaz</a>' in r.text)
+check('poznámka: nebezpečné věci odstraněny',
+      'alert(1)' not in r.text and 'javascript:' not in r.text
+      and 'onclick' not in r.text and 'zlý odkaz' in r.text)
 xss_id = re.search(r'/note/(\d+)$', r.url).group(1)
 
-# 11. poznámka bez titulku se v seznamu ukáže prvním řádkem těla
+# 11. poznámka bez titulku se v seznamu ukáže prvním řádkem čistého textu
 r = s.get(BASE + '/')
-check('bez titulku → první řádek v seznamu', '&lt;script&gt;alert(1)&lt;/script&gt;' in r.text)
+check('bez titulku → první řádek bez HTML v seznamu',
+      'tučný text' in r.text)
 
 # 12. smazání (kontroluje zmizení testovacích poznámek, DB nemusí být prázdná)
 for nid in (note_id, xss_id):
     s.post(f'{BASE}/note/{nid}/delete', data={'csrf_token': csrf})
 r = s.get(BASE + '/')
 check('smazání poznámek',
-      'Upravený titulek' not in r.text and 'alert(1)' not in r.text)
+      'Upravený titulek' not in r.text and 'tučný text' not in r.text)
 
 # 12b. rychlý blok – uložení a načtení
 r = s.post(BASE + '/scratchpad', data={'body': 'scratch-obsah-1 ěščř',
@@ -170,6 +179,14 @@ check('protokol: stránka funguje a obsahuje záznamy',
       r.status_code == 200 and 'vytvořeno' in r.text and 'smazáno' in r.text
       and 'Konfliktní' in r.text and 'rychlý blok' in r.text)
 
+# 12f. záložka AI poznámky – stránka odpovídá (s konfigurací i bez ní)
+r = s.get(BASE + '/ai')
+check('AI poznámky: stránka odpovídá',
+      r.status_code == 200 and 'AI poznámky' in r.text)
+r = s.get(BASE + '/ai/neplatne%20id')
+check('AI poznámky: neplatné ID souboru → 404', r.status_code == 404,
+      f'{r.status_code}')
+
 # 13. neexistující poznámka → 404
 r = s.get(BASE + '/note/99999')
 check('neexistující poznámka → 404', r.status_code == 404, f'{r.status_code}')
@@ -182,7 +199,7 @@ check('odhlášení', r.status_code == 302 and r2.status_code == 302)
 
 # 15. statika + PWA soubory
 for path in ('/static/style.css', '/static/manifest.json', '/static/sw.js',
-             '/static/icon-192.png', '/static/icon-512.png'):
+             '/static/editor.js', '/static/icon-192.png', '/static/icon-512.png'):
     r = s.get(BASE + path)
     check(f'statika {path}', r.status_code == 200, f'{r.status_code}')
 

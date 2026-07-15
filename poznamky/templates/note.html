@@ -3,7 +3,7 @@
 {% block content %}
 <article class="note-detail">
   {% if note['title'] %}<h1>{{ note['title'] }}</h1>{% endif %}
-  <div class="note-body">{{ note['body'] }}</div>
+  <div class="note-body">{{ note['body'] | as_html | safe }}</div>
   <p class="note-meta">
     Vytvořeno {{ note['created_at'] | localdt }}
     {% if note['updated_at'] != note['created_at'] %}

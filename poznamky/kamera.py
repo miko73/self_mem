@@ -10,7 +10,13 @@ import json
 import os
 from pathlib import Path
 
-import anthropic
+try:
+    import anthropic
+except ImportError:        # bez knihovny poběží zbytek aplikace dál
+    anthropic = None
+
+_NO_LIB = ('Chybí knihovna anthropic – na serveru spustit '
+           '„pip3.X install --user anthropic“ pro verzi Pythonu web app.')
 
 MODEL = 'claude-opus-5-5'
 MIN_JISTOTA = 0.7          # pod touto hodnotou se fotka zařadí ručně
@@ -70,6 +76,8 @@ def delete_key():
 
 def verify_key(key):
     """Ověří klíč (výpis modelů nic nestojí). Vrátí None nebo text chyby."""
+    if anthropic is None:
+        return _NO_LIB
     try:
         anthropic.Anthropic(api_key=key, max_retries=0,
                             timeout=20).models.list(limit=1)
@@ -117,6 +125,8 @@ def _system_prompt():
 
 def classify(image_bytes, media_type):
     """Pošle fotku Claudovi, vrátí dict kategorie/hodnota/jistota/popis."""
+    if anthropic is None:
+        raise AIError(_NO_LIB)
     key = get_key()
     if not key:
         raise AIError('Chybí klíč k AI.')

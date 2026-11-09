@@ -87,8 +87,8 @@ def verify_key(key):
         return 'Klíč je neplatný.'
     except anthropic.PermissionDeniedError:
         return 'Klíč nemá oprávnění k API.'
-    except anthropic.APIConnectionError:
-        return 'Nepodařilo se spojit s api.anthropic.com.'
+    except anthropic.APIConnectionError as e:
+        return f'Nepodařilo se spojit s api.anthropic.com ({e.__cause__!r}).'
     except anthropic.APIStatusError as e:
         return f'Chyba API {e.status_code}: {e.message}'
     return None
@@ -159,8 +159,9 @@ def classify(image_bytes, media_type):
         raise AIError(f'AI odmítla požadavek: {e.message}')
     except anthropic.APIStatusError as e:
         raise AIError(f'Chyba AI {e.status_code}: {e.message}')
-    except anthropic.APIConnectionError:
-        raise AIError('Nepodařilo se spojit s api.anthropic.com.')
+    except anthropic.APIConnectionError as e:
+        raise AIError(f'Nepodařilo se spojit s api.anthropic.com '
+                      f'({e.__cause__!r}).')
 
     if resp.stop_reason == 'refusal':
         raise AIError('AI odmítla fotku analyzovat.')

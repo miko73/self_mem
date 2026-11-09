@@ -76,13 +76,20 @@ def delete_key():
         _KEY_FILE.unlink()
 
 
+def _client(key, **kw):
+    # bez 'br': stará systémová knihovna brotli (PythonAnywhere) neumí
+    # dekódovat odpověď v httpx2 → TypeError: process() takes no keyword args
+    return anthropic.Anthropic(
+        api_key=key, default_headers={'Accept-Encoding': 'gzip, deflate'},
+        **kw)
+
+
 def verify_key(key):
     """Ověří klíč (výpis modelů nic nestojí). Vrátí None nebo text chyby."""
     if anthropic is None:
         return _NO_LIB
     try:
-        anthropic.Anthropic(api_key=key, max_retries=0,
-                            timeout=20).models.list(limit=1)
+        _client(key, max_retries=0, timeout=20).models.list(limit=1)
     except anthropic.AuthenticationError:
         return 'Klíč je neplatný.'
     except anthropic.PermissionDeniedError:
@@ -132,7 +139,7 @@ def classify(image_bytes, media_type):
     key = get_key()
     if not key:
         raise AIError('Chybí klíč k AI.')
-    client = anthropic.Anthropic(api_key=key, timeout=120)
+    client = _client(key, timeout=120)
     try:
         resp = client.beta.messages.create(
             model=MODEL,

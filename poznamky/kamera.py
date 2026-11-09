@@ -10,13 +10,15 @@ import json
 import os
 from pathlib import Path
 
+import sys
+
 try:
     import anthropic
-except ImportError:        # bez knihovny poběží zbytek aplikace dál
+    _NO_LIB = ''
+except ImportError as e:   # bez knihovny poběží zbytek aplikace dál
     anthropic = None
-
-_NO_LIB = ('Chybí knihovna anthropic – na serveru spustit '
-           '„pip3.X install --user anthropic“ pro verzi Pythonu web app.')
+    _NO_LIB = (f'Nelze načíst knihovnu anthropic ({e!r}; Python '
+               f'{sys.version.split()[0]}, {sys.executable}).')
 
 MODEL = 'claude-opus-5-5'
 MIN_JISTOTA = 0.7          # pod touto hodnotou se fotka zařadí ručně

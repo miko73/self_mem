@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block title %}Fotka – Poznámky{% endblock %}
+{% block content %}
+{% set kat = kategorie.get(foto['kategorie']) %}
+<div class="note-detail">
+  <h1>
+    {% if foto['stav'] == 'zarazeno' %}✅ Zařazeno{% elif foto['stav'] == 'ceka_osoba' %}⚖️ Kdo se vážil?{% else %}⏳ Čeká na ruční zařazení{% endif %}
+  </h1>
+
+  <img src="{{ url_for('kamera_foto', foto_id=foto['id']) }}" alt="fotka"
+       class="kamera-foto">
+
+  <p class="note-meta">
+    {{ foto['ts'] | localdt }} · <code>{{ foto['slozka'] }}/{{ foto['nazev'] }}</code>
+    {% if foto['odkaz'] %}· <a href="{{ foto['odkaz'] }}" target="_blank" rel="noopener">otevřít v Drive</a>{% endif %}
+  </p>
+  {% if foto['popis'] or foto['jistota'] is not none %}
+  <p class="note-meta">
+    AI: {{ kat.nazev if kat else (foto['kategorie'] or '–') }}
+    {% if foto['hodnota'] %}· <strong>{{ foto['hodnota'] }} {{ kat.jednotka if kat else '' }}</strong>{% endif %}
+    {% if foto['jistota'] is not none %}· jistota {{ (foto['jistota'] * 100) | round | int }} %{% endif %}
+    {% if foto['popis'] %}<br>{{ foto['popis'] }}{% endif %}
+  </p>
+  {% endif %}
+
+  {% if foto['stav'] == 'ceka_osoba' %}
+  <form method="post" action="{{ url_for('kamera_zaradit', foto_id=foto['id']) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="kategorie" value="{{ foto['kategorie'] }}">
+    <label class="muted small">Hmotnost (kg)
+      <input type="text" name="hodnota" value="{{ foto['hodnota'] }}" inputmode="decimal" class="kamera-input">
+    </label>
+    <div class="actions kamera-volby">
+      {% for o in osoby %}
+      <button type="submit" name="osoba" value="{{ o }}" class="btn btn-primary">{{ o }}</button>
+      {% endfor %}
+    </div>
+    <div class="actions">
+      <input type="text" name="nova_osoba" placeholder="nová osoba" class="kamera-input">
+      <button type="submit" class="btn">Založit a zařadit</button>
+    </div>
+  </form>
+
+  {% else %}
+  <details {% if foto['stav'] != 'zarazeno' %}open{% endif %}>
+    <summary class="muted">{% if foto['stav'] == 'zarazeno' %}Opravit zařazení{% else %}Zařadit ručně{% endif %}</summary>
+    <form method="post" action="{{ url_for('kamera_zaradit', foto_id=foto['id']) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="muted small">Hodnota
+        <input type="text" name="hodnota" value="{{ foto['hodnota'] }}" inputmode="decimal" class="kamera-input">
+      </label>
+      <div class="actions kamera-volby">
+        {% for k, v in kategorie.items() %}
+        <button type="submit" name="kategorie" value="{{ k }}" class="btn {% if k == foto['kategorie'] %}btn-primary{% endif %}">{{ v.nazev }}</button>
+        {% endfor %}
+      </div>
+    </form>
+  </details>
+  {% endif %}
+
+  <div class="actions">
+    <a href="{{ url_for('kamera_index') }}" class="btn btn-primary">📷 Další fotka</a>
+  </div>
+</div>
+{% endblock %}

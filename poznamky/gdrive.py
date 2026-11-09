@@ -134,6 +134,12 @@ def read_text(file_id, mime_type):
     return data.decode('utf-8', 'replace')
 
 
+def read_bytes(file_id):
+    """Binární obsah souboru (např. fotky)."""
+    return _api(f'/drive/v3/files/{urllib.parse.quote(file_id)}',
+                {'alt': 'media'}, raw=True)
+
+
 def write_text(file_id, mime_type, text):
     """Přepíše obsah souboru; markdown se u Google Docu převede zpět."""
     if mime_type == DOC_MIME:
@@ -143,3 +149,89 @@ def write_text(file_id, mime_type, text):
     _api(f'/upload/drive/v3/files/{urllib.parse.quote(file_id)}',
          {'uploadType': 'media'}, method='PATCH',
          body=text.encode('utf-8'), content_type=content_type)
+
+
+# ------------------------------------------- úložiště dokumentů (složky)
+
+# Kořen pro cesty typu „stavy_meridel/plyn“ – výchozí je „Můj disk“.
+DOCS_ROOT_ID = os.environ.get('GDRIVE_DOCS_ROOT_ID', 'root')
+FOLDER_MIME = 'application/vnd.google-apps.folder'
+_folder_cache = {}
+
+
+def _q(value):
+    """Escapování hodnoty pro dotaz q= v Drive API."""
+    return value.replace('\\', '\\\\').replace("'", "\\'")
+
+
+def _child_folder(parent_id, name, create):
+    key = (parent_id, name)
+    if key in _folder_cache:
+        return _folder_cache[key]
+    j = _api('/drive/v3/files', {
+        'q': (f"'{_q(parent_id)}' in parents and name = '{_q(name)}' "
+              f"and mimeType = '{FOLDER_MIME}' and trashed = false"),
+        'fields': 'files(id)', 'pageSize': '1',
+    })
+    files = j.get('files', [])
+    if files:
+        fid = files[0]['id']
+    elif create:
+        body = json.dumps({'name': name, 'mimeType': FOLDER_MIME,
+                           'parents': [parent_id]}).encode('utf-8')
+        fid = _api('/drive/v3/files', {'fields': 'id'}, method='POST',
+                   body=body, content_type='application/json')['id']
+    else:
+        return None
+    _folder_cache[key] = fid
+    return fid
+
+
+def folder_by_path(path, create=True):
+    """ID složky podle cesty od DOCS_ROOT_ID; chybějící složky založí."""
+    fid = DOCS_ROOT_ID
+    for part in [p for p in path.split('/') if p]:
+        fid = _child_folder(fid, part, create)
+        if fid is None:
+            return None
+    return fid
+
+
+def list_subfolders(path):
+    """Názvy podsložek dané cesty (abecedně); neexistující cesta → []."""
+    fid = folder_by_path(path, create=False)
+    if not fid:
+        return []
+    j = _api('/drive/v3/files', {
+        'q': (f"'{_q(fid)}' in parents and mimeType = '{FOLDER_MIME}' "
+              "and trashed = false"),
+        'fields': 'files(id,name)', 'orderBy': 'name', 'pageSize': '100',
+    })
+    return [f['name'] for f in j.get('files', [])]
+
+
+def upload_file(folder_id, name, data, mime_type):
+    """Nahraje binární soubor do složky, vrátí metadata (id, webViewLink)."""
+    boundary = 'selfmem' + os.urandom(8).hex()
+    meta = json.dumps({'name': name, 'parents': [folder_id]})
+    body = (f'--{boundary}\r\nContent-Type: application/json; charset=UTF-8'
+            f'\r\n\r\n{meta}\r\n--{boundary}\r\nContent-Type: {mime_type}'
+            '\r\n\r\n').encode('utf-8') + data + f'\r\n--{boundary}--'.encode()
+    return _api('/upload/drive/v3/files',
+                {'uploadType': 'multipart', 'fields': 'id,name,webViewLink'},
+                method='POST', body=body,
+                content_type=f'multipart/related; boundary={boundary}')
+
+
+def move_file(file_id, folder_id, new_name=None):
+    """Přesune soubor do jiné složky (případně přejmenuje)."""
+    fid = urllib.parse.quote(file_id)
+    parents = _api(f'/drive/v3/files/{fid}',
+                   {'fields': 'parents'}).get('parents', [])
+    params = {'addParents': folder_id, 'fields': 'id,name,webViewLink'}
+    old = [p for p in parents if p != folder_id]
+    if old:
+        params['removeParents'] = ','.join(old)
+    body = json.dumps({'name': new_name} if new_name else {}).encode('utf-8')
+    return _api(f'/drive/v3/files/{fid}', params, method='PATCH', body=body,
+                content_type='application/json')

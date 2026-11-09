@@ -46,6 +46,31 @@ Jinou složku lze nastavit env proměnnou `GDRIVE_FOLDER_ID`
 proměnné `GDRIVE_CLIENT_ID`, `GDRIVE_CLIENT_SECRET`,
 `GDRIVE_REFRESH_TOKEN` (ve WSGI souboru).
 
+## Záložka 📷 Foto (vstup z kamery)
+
+Vyfocená fotka se uloží na Google Drive do složky `vstup/`, Claude ji
+rozpozná a přesune podle kategorie (definice v `kamera.py`, `KATEGORIE`):
+
+| Co je na fotce | Cílová složka |
+|---|---|
+| elektroměr | `stavy_meridel/el_en` |
+| vodoměr | `stavy_meridel/voda` |
+| plynoměr | `stavy_meridel/plyn` |
+| osobní váha | `osobni/hmotnost/<osoba>` – aplikace se zeptá, kdo se vážil (nabídne existující podsložky) |
+
+Soubor se přejmenuje na např. `2026-11-08_0712_plyn_12345.678m3.jpg`,
+odečtená hodnota se uloží i do databáze (tabulka `kamera`). Když si AI
+není jistá (< 70 %) nebo jde o něco jiného, fotka zůstane ve `vstup/`
+a zařadí se ručně tlačítkem. Chybějící složky se založí automaticky.
+
+- Cesty se počítají od kořene „Můj disk“; jiný kořen = env proměnná
+  `GDRIVE_DOCS_ROOT_ID` (ID složky).
+- AI klíč: při prvním otevření záložky aplikace vyzve k zadání API klíče
+  z https://platform.claude.com (předplatné claude.ai v cizích aplikacích
+  použít nejde). Klíč se ověří a uloží do `anthropic_key.txt` vedle
+  databáze; alternativně env proměnná `ANTHROPIC_API_KEY`.
+- Na PythonAnywhere: `pip3 install --user anthropic`.
+
 ## Nasazení na PythonAnywhere (free)
 
 ### Krok 1 – účet
@@ -58,7 +83,7 @@ V **Consoles → Bash**:
 
 ```bash
 git clone https://github.com/miko73/self_mem.git
-pip3 install --user flask
+pip3 install --user flask anthropic
 python3 -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('MOJE-HESLO'))"
 ```
 

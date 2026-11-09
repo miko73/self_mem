@@ -234,3 +234,12 @@ main {
 }
 .login-form h1 { margin-bottom: 1.5rem; }
 .login-form .btn { width: 100%; }
+
+/* vstup z kamery */
+.small { font-size: 0.85rem; margin-top: 0.75rem; }
+.kamera-form { max-width: 600px; margin: 0 auto 1.5rem; }
+.kamera-btn { display: block; width: 100%; text-align: center; padding: 1.25rem; font-size: 1.1rem; cursor: pointer; }
+.kamera-foto { display: block; max-width: 100%; max-height: 50vh; margin: 0.75rem auto; border-radius: 8px; }
+.kamera-input { display: block; width: 100%; padding: 0.5rem; font-size: 1rem; margin-top: 0.25rem; border: 1px solid #d1d5db; border-radius: 6px; }
+.kamera-volby { flex-wrap: wrap; }
+.kamera-postup { margin: 0.75rem 0 1rem 1.25rem; }

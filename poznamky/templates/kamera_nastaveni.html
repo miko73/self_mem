@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}AI účet – Poznámky{% endblock %}
+{% block content %}
+<div class="note-detail">
+  <h1 class="page-title">🔑 AI účet pro rozpoznávání fotek</h1>
+
+  {% if has_key %}
+  <p>✅ AI účet je připojen{% if from_env %} (klíč z proměnné prostředí <code>ANTHROPIC_API_KEY</code>){% endif %}.</p>
+  {% if not from_env %}
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" name="odpojit" value="1" class="btn btn-danger">Odpojit</button>
+  </form>
+  {% endif %}
+  <p><a href="{{ url_for('kamera_index') }}" class="btn btn-primary">📷 Zpět k focení</a></p>
+  {% else %}
+  <p>Rozpoznávání fotek používá Claude API. Předplatné claude.ai (Pro/Max)
+  nejde použít v cizích aplikacích – potřebuješ API klíč:</p>
+  <ol class="kamera-postup">
+    <li>Přihlas se na <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">platform.claude.com</a> (stejným účtem jako na claude.ai).</li>
+    <li>V části <em>Billing</em> nabij kredit (stačí minimum – jedna fotka stojí zhruba 30 haléřů).</li>
+    <li>V <em>API Keys</em> vytvoř klíč a vlož ho sem.</li>
+  </ol>
+  <form method="post" class="note-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="password" name="api_key" placeholder="sk-ant-…" autocomplete="off" class="kamera-input" required>
+    <div class="actions">
+      <button type="submit" class="btn btn-primary">Ověřit a uložit</button>
+    </div>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

@@ -18,6 +18,22 @@ CREATE TABLE IF NOT EXISTS scratchpad (
     updated_at TEXT NOT NULL
 );
 
+-- vstup z kamery: fotky nahrané na Drive a jejich zařazení
+CREATE TABLE IF NOT EXISTS kamera (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts        TEXT NOT NULL,              -- ISO 8601 UTC
+    file_id   TEXT NOT NULL,              -- ID souboru na Google Drive
+    nazev     TEXT NOT NULL DEFAULT '',
+    kategorie TEXT NOT NULL DEFAULT '',   -- el_en / voda / plyn / vaha / jine
+    hodnota   TEXT NOT NULL DEFAULT '',   -- odečtená hodnota („12345.678“)
+    jistota   REAL,
+    popis     TEXT NOT NULL DEFAULT '',
+    osoba     TEXT NOT NULL DEFAULT '',
+    slozka    TEXT NOT NULL DEFAULT '',   -- cesta na Drive, kde fotka leží
+    odkaz     TEXT NOT NULL DEFAULT '',   -- webViewLink
+    stav      TEXT NOT NULL               -- ceka / ceka_osoba / zarazeno
+);
+
 CREATE TABLE IF NOT EXISTS notes (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     title      TEXT DEFAULT '',

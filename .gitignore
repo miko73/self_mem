@@ -3,5 +3,6 @@ __pycache__/
 notes.db
 secret_key.txt
 google_auth.json
+anthropic_key.txt
 server_out.log
 server_err.log

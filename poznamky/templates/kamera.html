@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+{% block title %}Foto – Poznámky{% endblock %}
+{% block content %}
+<h1 class="page-title">📷 Vstup z kamery</h1>
+
+<form id="foto-form" method="post" enctype="multipart/form-data"
+      action="{{ url_for('kamera_index') }}" class="kamera-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label class="btn btn-primary kamera-btn">
+    📷 Vyfotit / vybrat fotku
+    <input type="file" name="foto" id="foto-input" accept="image/*"
+           capture="environment" hidden>
+  </label>
+  <p id="foto-status" class="muted"></p>
+  <p class="muted small">
+    Fotka se uloží na Drive do „vstup“, AI ji rozpozná a přesune:
+    {% for k, v in kategorie.items() %}{{ v.nazev }} → {{ v.slozka }}{% if v.osoba %}/&lt;osoba&gt;{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}.
+  </p>
+</form>
+
+{% if fotky %}
+<h2 class="pane-head">Poslední fotky</h2>
+<ul class="note-list">
+  {% for f in fotky %}
+  <li>
+    <a href="{{ url_for('kamera_detail', foto_id=f['id']) }}">
+      <span class="note-title">
+        {% if f['stav'] == 'zarazeno' %}✅{% else %}⏳{% endif %}
+        {{ kategorie[f['kategorie']].nazev if f['kategorie'] in kategorie else (f['kategorie'] or 'nerozpoznáno') }}
+        {% if f['hodnota'] %}– {{ f['hodnota'] }} {{ kategorie[f['kategorie']].jednotka if f['kategorie'] in kategorie else '' }}{% endif %}
+        {% if f['osoba'] %}({{ f['osoba'] }}){% endif %}
+      </span>
+      <span class="note-date">{{ f['ts'] | localdt }} · {{ f['slozka'] }}</span>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<p class="muted small"><a href="{{ url_for('kamera_nastaveni') }}">Nastavení AI účtu</a></p>
+
+<script>
+// Fotku před odesláním zmenšíme (max. 1568 px = víc AI stejně nevyužije,
+// JPEG) – rychlejší upload, vejde se do limitu. Při selhání jde originál.
+(function () {
+  const form = document.getElementById('foto-form');
+  const input = document.getElementById('foto-input');
+  const status = document.getElementById('foto-status');
+  const MAX = 1568;
+
+  function shrink(file) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.naturalWidth * scale);
+        c.height = Math.round(img.naturalHeight * scale);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        c.toBlob((b) => resolve(b), 'image/jpeg', 0.85);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+      img.src = url;
+    });
+  }
+
+  input.addEventListener('change', async () => {
+    const file = input.files[0];
+    if (!file) return;
+    status.textContent = '⏳ Nahrávám a analyzuji…';
+    try {
+      const blob = await shrink(file);
+      if (blob) {
+        const dt = new DataTransfer();
+        dt.items.add(new File([blob], 'foto.jpg', { type: 'image/jpeg' }));
+        input.files = dt.files;
+      }
+    } catch (e) { /* pošle se originál */ }
+    form.submit();
+  });
+})();
+</script>
+{% endblock %}

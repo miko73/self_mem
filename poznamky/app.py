@@ -20,9 +20,11 @@ from flask import (Flask, abort, flash, g, redirect, render_template,
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import gdrive
+import kamera
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get('NOTES_DB', BASE_DIR / 'notes.db'))
+kamera.set_key_dir(DB_PATH.parent)
 try:
     LOCAL_TZ = ZoneInfo('Europe/Prague')
 except ZoneInfoNotFoundError:
@@ -34,7 +36,7 @@ app.config.update(
     SESSION_COOKIE_SECURE=True,      # lokální běh přes `python app.py` to vypne
     SESSION_COOKIE_SAMESITE='Lax',
     PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 30,   # 30 dní
-    MAX_CONTENT_LENGTH=1024 * 1024,  # 1 MB na požadavek stačí
+    MAX_CONTENT_LENGTH=12 * 1024 * 1024,  # fotky z kamery
 )
 
 
@@ -498,6 +500,196 @@ def ai_edit(file_id):
         flash(str(e))
         return redirect(url_for('ai_list'))
     return render_template('ai_edit.html', f=meta, content=content)
+
+
+# ------------------------------------------------- vstup z kamery (fotky)
+
+_IMAGE_TYPES = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp'}
+_MAX_IMAGE = 3_750_000          # API přijme max. 5 MB v base64
+_OSOBA_RE = re.compile(r'^[^/\\]{1,50}$')
+
+
+def get_foto_or_404(foto_id):
+    row = get_db().execute(
+        'SELECT * FROM kamera WHERE id = ?', (foto_id,)).fetchone()
+    if row is None:
+        abort(404)
+    return row
+
+
+def zaradit_foto(db, foto, kategorie, hodnota, osoba=''):
+    """Přesune fotku do cílové složky a přejmenuje ji podle obsahu."""
+    kat = kamera.KATEGORIE[kategorie]
+    slozka = kat['slozka'] + (f'/{osoba}' if osoba else '')
+    datum = datetime.fromisoformat(foto['ts']).astimezone(LOCAL_TZ)
+    ext = foto['nazev'].rsplit('.', 1)[-1]
+    nazev = f'{datum:%Y-%m-%d_%H%M}_{kategorie}'
+    cislo = re.sub(r'[^0-9.]', '', hodnota)
+    if cislo:
+        nazev += f'_{cislo}{kat["jednotka"]}'
+    nazev += f'.{ext}'
+    meta = gdrive.move_file(foto['file_id'], gdrive.folder_by_path(slozka),
+                            nazev)
+    db.execute(
+        'UPDATE kamera SET kategorie = ?, hodnota = ?, osoba = ?, slozka = ?, '
+        "nazev = ?, odkaz = ?, stav = 'zarazeno' WHERE id = ?",
+        (kategorie, hodnota, osoba, slozka, nazev,
+         meta.get('webViewLink', foto['odkaz']), foto['id']))
+    db.commit()
+
+
+@app.route('/kamera', methods=['GET', 'POST'])
+@login_required
+def kamera_index():
+    if not gdrive.is_configured():
+        flash('Google Drive není propojen – postup viz README.')
+        return redirect(url_for('ai_list'))
+    if not kamera.get_key():
+        flash('Pro rozpoznávání fotek je potřeba připojit AI účet.')
+        return redirect(url_for('kamera_nastaveni'))
+    db = get_db()
+    if request.method == 'POST':
+        f = request.files.get('foto')
+        data = f.read() if f else b''
+        mime = (f.mimetype if f else '') or ''
+        if not data:
+            flash('Nevybral jsi žádnou fotku.')
+            return redirect(url_for('kamera_index'))
+        if mime not in _IMAGE_TYPES:
+            flash(f'Nepodporovaný formát ({mime or "neznámý"}) – použij JPEG.')
+            return redirect(url_for('kamera_index'))
+        if len(data) > _MAX_IMAGE:
+            flash('Fotka je příliš velká (max. ~3,7 MB).')
+            return redirect(url_for('kamera_index'))
+
+        ts = now_iso()
+        nazev = (f'{datetime.now(LOCAL_TZ):%Y-%m-%d_%H%M%S}.'
+                 f'{_IMAGE_TYPES[mime]}')
+        try:
+            meta = gdrive.upload_file(
+                gdrive.folder_by_path(kamera.VSTUP_SLOZKA), nazev, data, mime)
+        except gdrive.DriveError as e:
+            flash(f'Fotku se nepodařilo uložit: {e}')
+            return redirect(url_for('kamera_index'))
+        cur = db.execute(
+            'INSERT INTO kamera (ts, file_id, nazev, slozka, odkaz, stav) '
+            "VALUES (?, ?, ?, ?, ?, 'ceka')",
+            (ts, meta['id'], nazev, kamera.VSTUP_SLOZKA,
+             meta.get('webViewLink', '')))
+        db.commit()
+        foto_id = cur.lastrowid
+
+        try:
+            res = kamera.classify(data, mime)
+        except kamera.AIError as e:
+            flash(f'Fotka je uložena ve „{kamera.VSTUP_SLOZKA}“, ale AI ji '
+                  f'nerozpoznala: {e}')
+            return redirect(url_for('kamera_detail', foto_id=foto_id))
+
+        kat, hodnota = res['kategorie'], res['hodnota']
+        db.execute(
+            'UPDATE kamera SET kategorie = ?, hodnota = ?, jistota = ?, '
+            'popis = ? WHERE id = ?',
+            (kat, hodnota, res['jistota'], res['popis'], foto_id))
+        db.commit()
+        if kat in kamera.KATEGORIE and res['jistota'] >= kamera.MIN_JISTOTA:
+            if kamera.KATEGORIE[kat].get('osoba'):
+                db.execute("UPDATE kamera SET stav = 'ceka_osoba' "
+                           'WHERE id = ?', (foto_id,))
+                db.commit()
+            else:
+                try:
+                    zaradit_foto(db, get_foto_or_404(foto_id), kat, hodnota)
+                except gdrive.DriveError as e:
+                    flash(f'Přesun se nepodařil: {e}')
+        return redirect(url_for('kamera_detail', foto_id=foto_id))
+
+    fotky = db.execute(
+        'SELECT * FROM kamera ORDER BY id DESC LIMIT 30').fetchall()
+    return render_template('kamera.html', fotky=fotky,
+                           kategorie=kamera.KATEGORIE)
+
+
+@app.route('/kamera/<int:foto_id>')
+@login_required
+def kamera_detail(foto_id):
+    foto = get_foto_or_404(foto_id)
+    osoby = []
+    if foto['stav'] != 'zarazeno':
+        try:
+            osoby = gdrive.list_subfolders(kamera.VAHA_SLOZKA)
+        except gdrive.DriveError as e:
+            flash(str(e))
+    return render_template('kamera_detail.html', foto=foto, osoby=osoby,
+                           kategorie=kamera.KATEGORIE,
+                           min_jistota=kamera.MIN_JISTOTA)
+
+
+@app.get('/kamera/<int:foto_id>/foto')
+@login_required
+def kamera_foto(foto_id):
+    """Náhled fotky (stažený z Drive přes server)."""
+    foto = get_foto_or_404(foto_id)
+    try:
+        data = gdrive.read_bytes(foto['file_id'])
+    except gdrive.DriveError:
+        abort(404)
+    ext = foto['nazev'].rsplit('.', 1)[-1]
+    mime = next((m for m, e in _IMAGE_TYPES.items() if e == ext),
+                'image/jpeg')
+    return data, 200, {'Content-Type': mime,
+                       'Cache-Control': 'private, max-age=86400'}
+
+
+@app.post('/kamera/<int:foto_id>/zaradit')
+@login_required
+def kamera_zaradit(foto_id):
+    foto = get_foto_or_404(foto_id)
+    kat = request.form.get('kategorie', '')
+    if kat not in kamera.KATEGORIE:
+        abort(400)
+    hodnota = request.form.get('hodnota', '').replace(',', '.').strip()[:30]
+    osoba = (request.form.get('osoba') or
+             request.form.get('nova_osoba', '')).strip()
+    db = get_db()
+    if kamera.KATEGORIE[kat].get('osoba'):
+        if not osoba:
+            db.execute("UPDATE kamera SET kategorie = ?, hodnota = ?, "
+                       "stav = 'ceka_osoba' WHERE id = ?",
+                       (kat, hodnota, foto_id))
+            db.commit()
+            return redirect(url_for('kamera_detail', foto_id=foto_id))
+        if not _OSOBA_RE.match(osoba):
+            flash('Neplatné jméno osoby.')
+            return redirect(url_for('kamera_detail', foto_id=foto_id))
+    else:
+        osoba = ''
+    try:
+        zaradit_foto(db, foto, kat, hodnota, osoba)
+    except gdrive.DriveError as e:
+        flash(f'Přesun se nepodařil: {e}')
+    return redirect(url_for('kamera_detail', foto_id=foto_id))
+
+
+@app.route('/kamera/nastaveni', methods=['GET', 'POST'])
+@login_required
+def kamera_nastaveni():
+    if request.method == 'POST':
+        if request.form.get('odpojit'):
+            kamera.delete_key()
+            flash('AI účet odpojen.')
+            return redirect(url_for('kamera_nastaveni'))
+        key = request.form.get('api_key', '').strip()
+        chyba = kamera.verify_key(key) if key else 'Zadej klíč.'
+        if chyba:
+            flash(f'Ověření se nepodařilo: {chyba}')
+        else:
+            kamera.save_key(key)
+            flash('AI účet ověřen a připojen.')
+            return redirect(url_for('kamera_index'))
+    return render_template('kamera_nastaveni.html',
+                           has_key=bool(kamera.get_key()),
+                           from_env=bool(os.environ.get('ANTHROPIC_API_KEY')))
 
 
 # ---------------------------------------------------------------- start

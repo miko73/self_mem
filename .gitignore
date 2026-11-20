@@ -6,3 +6,4 @@ google_auth.json
 anthropic_key.txt
 server_out.log
 server_err.log
+poznamky/google_auth_orig.json

@@ -1,0 +1,7 @@
+[Unit]
+Description=Zaloha databaze Poznamky
+
+[Service]
+Type=oneshot
+User=poznamky
+ExecStart=/usr/local/bin/poznamky-backup

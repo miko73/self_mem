@@ -71,7 +71,16 @@ a zařadí se ručně tlačítkem. Chybějící složky se založí automaticky.
   databáze; alternativně env proměnná `ANTHROPIC_API_KEY`.
 - Na PythonAnywhere: `pip3 install --user anthropic`.
 
-## Nasazení na PythonAnywhere (free)
+## Nasazení na Google Cloud VM (aktuální)
+
+Aplikace běží na VM `pg-free` (Caddy + gunicorn + DuckDNS). Instalace, přenos
+dat z PythonAnywhere, aktualizace a provoz: [../deploy/gcp/README.md](../deploy/gcp/README.md).
+Na VM leží `google_auth.json` v `/opt/self_mem/poznamky/`, databáze a klíče
+v `/var/lib/poznamky/`.
+
+## Nasazení na PythonAnywhere (původní, free)
+
+Platí do dokončení přesunu na Google Cloud; poté jen pro případný návrat.
 
 ### Krok 1 – účet
 

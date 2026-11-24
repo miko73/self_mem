@@ -79,6 +79,7 @@ def delete_key():
 def _client(key, **kw):
     # bez 'br': stará systémová knihovna brotli (PythonAnywhere) neumí
     # dekódovat odpověď v httpx2 → TypeError: process() takes no keyword args
+    # (na Google VM s venv už nutné není, ale neškodí)
     return anthropic.Anthropic(
         api_key=key, default_headers={'Accept-Encoding': 'gzip, deflate'},
         **kw)

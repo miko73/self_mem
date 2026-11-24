@@ -1,0 +1,9 @@
+[Unit]
+Description=Aktualizace IP na DuckDNS kazdych 5 minut
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

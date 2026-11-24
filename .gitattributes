@@ -1,0 +1,5 @@
+# skripty a konfigurace pro Linux VM vzdy s LF
+deploy/gcp/*.sh text eol=lf
+deploy/gcp/*.service text eol=lf
+deploy/gcp/*.timer text eol=lf
+deploy/gcp/Caddyfile text eol=lf

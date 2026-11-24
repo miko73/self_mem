@@ -1,0 +1,9 @@
+# Sablona – setup_vm.sh nahradi __DOMAIN__ a ulozi do /etc/caddy/Caddyfile.
+# Caddy samo ziska certifikat Let's Encrypt a presmeruje http -> https.
+__DOMAIN__ {
+	request_body {
+		max_size 13MB
+	}
+	encode gzip
+	reverse_proxy 127.0.0.1:8000
+}
